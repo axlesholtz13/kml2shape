@@ -1,12 +1,229 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>KML/KMZ to Shapefile Converter</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KML/KMZ to Shapefile Converter</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f8fafc; color: #0f172a; min-height: 100vh; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 2.5rem 1.25rem; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: #d1fae5; color: #065f46;
+             font-size: .7rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+             padding: .25rem .75rem; border-radius: 999px; margin-bottom: .75rem; }
+    h1 { font-size: 2rem; font-weight: 800; letter-spacing: -.01em; }
+    .subtitle { margin-top: .5rem; color: #475569; font-size: .9rem; line-height: 1.6; }
+    .header-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; justify-content: space-between; margin-bottom: 2rem; }
+
+    /* Drop zone */
+    #dropzone { border: 2px dashed #cbd5e1; border-radius: 1.25rem; background: #fff;
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                min-height: 260px; cursor: pointer; text-align: center; padding: 2rem;
+                transition: background .15s, border-color .15s; }
+    #dropzone.drag-over { border-color: #10b981; background: #ecfdf5; }
+    #dropzone .icon-wrap { background: #f1f5f9; color: #334155; border-radius: 1rem; padding: 1rem; margin-bottom: 1.25rem; font-size: 2.5rem; line-height: 1; }
+    #dropzone.drag-over .icon-wrap { background: #a7f3d0; color: #065f46; }
+    #dropzone .dz-title { font-size: 1.2rem; font-weight: 700; }
+    #dropzone .dz-hint { margin-top: .4rem; font-size: .85rem; color: #64748b; }
+    #file-input { display: none; }
+
+    /* Job list */
+    #jobs-section { margin-top: 2rem; }
+    .jobs-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
+    .jobs-header h2 { font-size: 1.1rem; font-weight: 700; }
+    .jobs-count { font-size: .85rem; color: #64748b; }
+    .job-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 1.25rem; padding: 1rem;
+                display: flex; align-items: center; gap: 1rem; margin-bottom: .75rem; }
+    .job-icon { border-radius: .75rem; padding: .6rem; font-size: 1.4rem; line-height: 1; flex-shrink: 0; }
+    .job-icon.working { background: #dbeafe; }
+    .job-icon.done    { background: #d1fae5; }
+    .job-icon.error   { background: #fee2e2; }
+    .job-body { flex: 1; min-width: 0; }
+    .job-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-msg  { font-size: .82rem; margin-top: .2rem; color: #64748b; }
+    .job-msg.err { color: #b91c1c; }
+    .job-tags { display: flex; flex-wrap: wrap; gap: .35rem; margin-top: .45rem; }
+    .job-tag  { background: #f1f5f9; border-radius: 999px; padding: .15rem .6rem; font-size: .75rem; color: #475569; }
+    .btn-dl { display: inline-flex; align-items: center; gap: .4rem; background: #047857; color: #fff;
+              font-size: .85rem; font-weight: 600; border: none; border-radius: .75rem; padding: .55rem 1rem;
+              cursor: pointer; text-decoration: none; white-space: nowrap; transition: background .15s; }
+    .btn-dl:hover { background: #065f46; }
+    .btn-clear { display: inline-flex; align-items: center; gap: .4rem; background: transparent; color: #334155;
+                 font-size: .85rem; font-weight: 600; border: 1px solid #cbd5e1; border-radius: .75rem;
+                 padding: .45rem .9rem; cursor: pointer; transition: background .15s; }
+    .btn-clear:hover { background: #f1f5f9; }
+
+    /* Footer */
+    footer { margin-top: 2rem; background: #0f172a; color: #94a3b8; border-radius: 1.25rem; padding: 1.25rem 1.5rem; font-size: .85rem; line-height: 1.65; }
+    footer strong { color: #f8fafc; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="header-row">
+    <div>
+      <div class="badge">🗺️ Browser GIS utility</div>
+      <h1>KML/KMZ to Shapefile</h1>
+      <p class="subtitle">Drop Google Earth files below and download a zipped shapefile.<br>All processing stays in your browser — nothing is uploaded.</p>
+    </div>
+    <button class="btn-clear" id="clear-btn" style="display:none" onclick="clearAll()">🗑 Clear list</button>
+  </div>
+
+  <div id="dropzone" onclick="document.getElementById('file-input').click()"
+       ondragenter="onDragEnter(event)" ondragover="onDragOver(event)"
+       ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+    <div class="icon-wrap">☁️</div>
+    <div class="dz-title">Drop KML or KMZ files here</div>
+    <div class="dz-hint">or click to browse · multiple files supported</div>
+    <input id="file-input" type="file" accept=".kml,.kmz" multiple onchange="processFiles(this.files)">
+  </div>
+
+  <div id="jobs-section" style="display:none">
+    <div class="jobs-header">
+      <h2>Conversions</h2>
+      <span class="jobs-count" id="jobs-count"></span>
+    </div>
+    <div id="jobs-list"></div>
+  </div>
+
+  <footer>
+    <strong>Output notes</strong><br>
+    The download is a ZIP containing standard shapefile components (.shp, .shx, .dbf, .prj).
+    Mixed geometry inputs are separated into point, line, and polygon layers.
+    KML coordinates are geographic longitude/latitude; define or verify the CRS in your GIS software before analysis.
+  </footer>
+</div>
+
+<!-- CDN libraries -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tmcw/togeojson@5.8.1/dist/togeojson.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/shp-write@0.3.2/shpwrite.js"></script>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+const jobs = [];
+
+// ── Drag events ────────────────────────────────────────────────────────────
+function onDragEnter(e) { e.preventDefault(); document.getElementById('dropzone').classList.add('drag-over'); }
+function onDragOver(e)  { e.preventDefault(); }
+function onDragLeave(e) { e.preventDefault(); if (e.currentTarget === e.target) document.getElementById('dropzone').classList.remove('drag-over'); }
+function onDrop(e)      { e.preventDefault(); document.getElementById('dropzone').classList.remove('drag-over'); processFiles(e.dataTransfer.files); }
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function safeBaseName(name) {
+  return name.replace(/\.(kml|kmz)$/i, '').replace(/[^a-zA-Z0-9_-]+/g, '_').replace(/^_+|_+$/g, '') || 'converted_layer';
+}
+
+async function extractKmlText(file) {
+  if (/\.kml$/i.test(file.name)) return file.text();
+  if (!/\.kmz$/i.test(file.name)) throw new Error('Only .kml and .kmz files are supported.');
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const entries = Object.values(zip.files).filter(e => !e.dir && /\.kml$/i.test(e.name));
+  if (!entries.length) throw new Error('No KML document found inside the KMZ.');
+  const preferred = entries.find(e => /(^|\/)doc\.kml$/i.test(e.name)) || entries[0];
+  return preferred.async('string');
+}
+
+function normalizeZipOutput(output) {
+  if (output instanceof Blob) return output;
+  if (output instanceof ArrayBuffer) return new Blob([output], { type: 'application/zip' });
+  if (ArrayBuffer.isView(output)) return new Blob([output], { type: 'application/zip' });
+  if (typeof output === 'string') {
+    const clean = output.includes(',') ? output.split(',').pop() : output;
+    const binary = atob(clean);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: 'application/zip' });
+  }
+  throw new Error('The shapefile library returned an unsupported ZIP format.');
+}
+
+function countGeometryTypes(features) {
+  return features.reduce((acc, f) => {
+    const t = f?.geometry?.type || 'No geometry';
+    acc[t] = (acc[t] || 0) + 1;
+    return acc;
+  }, {});
+}
+
+// ── Render ─────────────────────────────────────────────────────────────────
+function render() {
+  const list = document.getElementById('jobs-list');
+  const section = document.getElementById('jobs-section');
+  const clearBtn = document.getElementById('clear-btn');
+  const countEl = document.getElementById('jobs-count');
+  if (!jobs.length) { section.style.display = 'none'; clearBtn.style.display = 'none'; return; }
+  section.style.display = '';
+  clearBtn.style.display = '';
+  const done = jobs.filter(j => j.status === 'done').length;
+  countEl.textContent = done + ' ready';
+  list.innerHTML = jobs.map(job => `
+    <div class="job-card">
+      <div class="job-icon ${job.status}">
+        ${job.status === 'done' ? '✅' : job.status === 'error' ? '⚠️' : '<span class="pulse">📦</span>'}
+      </div>
+      <div class="job-body">
+        <div class="job-name">${escHtml(job.name)}</div>
+        <div class="job-msg ${job.status === 'error' ? 'err' : ''}">${escHtml(job.message)}</div>
+        ${job.geometryCounts ? '<div class="job-tags">' + Object.entries(job.geometryCounts).map(([t,c]) => `<span class="job-tag">${escHtml(t)}: ${c}</span>`).join('') + '</div>' : ''}
+      </div>
+      ${job.status === 'done' ? `<a class="btn-dl" href="${job.url}" download="${escHtml(job.outputName)}">⬇ Download ZIP</a>` : ''}
+    </div>
+  `).join('');
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Processing ─────────────────────────────────────────────────────────────
+async function processFiles(fileList) {
+  const files = Array.from(fileList || []).filter(f => /\.(kml|kmz)$/i.test(f.name));
+  if (!files.length) {
+    jobs.unshift({ id: Math.random(), name: 'Unsupported selection', status: 'error', message: 'Choose one or more KML or KMZ files.' });
+    render(); return;
+  }
+
+  for (const file of files) {
+    const id = Math.random();
+    jobs.unshift({ id, name: file.name, status: 'working', message: 'Reading spatial features…' });
+    render();
+    try {
+      const kmlText = await extractKmlText(file);
+      const xml = new DOMParser().parseFromString(kmlText, 'text/xml');
+      if (xml.querySelector('parsererror')) throw new Error('The KML XML could not be parsed.');
+
+      const toGeoJSON = window.toGeoJSON || window['@tmcw/togeojson'];
+      const geojson = toGeoJSON.kml(xml);
+      const valid = (geojson.features || []).filter(f => f?.geometry);
+      if (!valid.length) throw new Error('No convertible features were found.');
+
+      const base = safeBaseName(file.name);
+      const zipResult = shpwrite.zip({ type: 'FeatureCollection', features: valid }, {
+        folder: base,
+        types: { point: `${base}_points`, polygon: `${base}_polygons`, line: `${base}_lines` }
+      });
+      const blob = normalizeZipOutput(zipResult);
+      const url = URL.createObjectURL(blob);
+      const geometryCounts = countGeometryTypes(valid);
+
+      const job = jobs.find(j => j.id === id);
+      Object.assign(job, { status: 'done', message: `${valid.length.toLocaleString()} feature${valid.length === 1 ? '' : 's'} converted`, geometryCounts, url, outputName: `${base}_shapefile.zip` });
+    } catch (err) {
+      const job = jobs.find(j => j.id === id);
+      if (job) Object.assign(job, { status: 'error', message: err.message || 'Conversion failed.' });
+    }
+    render();
+  }
+}
+
+function clearAll() {
+  jobs.forEach(j => j.url && URL.revokeObjectURL(j.url));
+  jobs.length = 0;
+  render();
+}
+</script>
+</body>
 </html>
